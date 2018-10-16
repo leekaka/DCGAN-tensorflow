@@ -29,13 +29,14 @@ flags.DEFINE_integer("generate_test_images", 100, "Number of images to generate 
 FLAGS = flags.FLAGS
 
 def main(_):
-  pp.pprint(flags.FLAGS.__flags)
+  pp.pprint(flags.FLAGS.__flags)         # 打印参数
 
+  # 判断输入图像的输出图像的宽是否指定，如果没有指定，则等于其图像的高。
   if FLAGS.input_width is None:
     FLAGS.input_width = FLAGS.input_height
   if FLAGS.output_width is None:
     FLAGS.output_width = FLAGS.output_height
-
+  # 判断checkpoint和sample的文件是否存在，不存在则创建
   if not os.path.exists(FLAGS.checkpoint_dir):
     os.makedirs(FLAGS.checkpoint_dir)
   if not os.path.exists(FLAGS.sample_dir):
