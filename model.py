@@ -10,10 +10,12 @@ from six.moves import xrange
 from ops import *
 from utils import *
 
-# 定义conv_out_size_same(size, stride)函数。大小和步幅。
+# 定义conv_out_size_same(size, stride)函数，大小和步幅。
 def conv_out_size_same(size, stride):
   return int(math.ceil(float(size) / float(stride)))
 
+
+# 定义DCGAN类
 class DCGAN(object):
   def __init__(self, sess, input_height=108, input_width=108, crop=True,
          batch_size=64, sample_num = 64, output_height=64, output_width=64,
@@ -21,18 +23,21 @@ class DCGAN(object):
          gfc_dim=1024, dfc_dim=1024, c_dim=3, dataset_name='default',
          input_fname_pattern='*.jpg', checkpoint_dir=None, sample_dir=None, data_dir='./data'):
     """
-
-    Args:
+    Args:   参数的释义
       sess: TensorFlow session
       batch_size: The size of batch. Should be specified before training.
       y_dim: (optional) Dimension of dim for y. [None]
       z_dim: (optional) Dimension of dim for Z. [100]
+      生成和判别器的卷积层和全连接层
       gf_dim: (optional) Dimension of gen filters in first conv layer. [64]
-      df_dim: (optional) Dimension of discrim filters in first conv layer. [64]
+      df_dim: (optional) Dimension of discrim filters in first conv layer. [64]     
       gfc_dim: (optional) Dimension of gen units for for fully connected layer. [1024]
       dfc_dim: (optional) Dimension of discrim units for fully connected layer. [1024]
-      c_dim: (optional) Dimension of image color. For grayscale input, set to 1. [3]
+      图像颜色的维度
+      c_dim: (optional) Dimension of image color. For grayscale input, set to 1. [3]    
     """
+    
+    
     self.sess = sess
     self.crop = crop
 
@@ -91,29 +96,39 @@ class DCGAN(object):
         raise Exception("[!] Entire dataset size is less than the configured batch_size")
     
     self.grayscale = (self.c_dim == 1)
-
     self.build_model()
-
+    
+    '''
+    定义类的初始化函数 init。主要是对一些默认的参数进行初始化。包括session、crop、批处理大小batch_size、样本数量sample_num、
+    输入与输出的高和宽、各种维度、生成器与判别器的批处理、数据集名字、灰度值、构建模型函数等。
+    其中要判断数据集的名字是否是mnist，是的话则直接用load_mnist()函数加载数据，否则需要从本地data文件夹中读取数据，并将图像读取为灰度图。
+    '''
+    # 构建模型函数build_model(self)
   def build_model(self):
+    
+    # 首先判断y_dim，然后用tf.placeholder占位符定义并初始化y。
     if self.y_dim:
       self.y = tf.placeholder(tf.float32, [self.batch_size, self.y_dim], name='y')
     else:
       self.y = None
-
+    
+    # 判断crop是否为真，是的话，则裁剪图像维度为输出图像的维度；否则仍是输入图像的维度。
     if self.crop:
       image_dims = [self.output_height, self.output_width, self.c_dim]
     else:
       image_dims = [self.input_height, self.input_width, self.c_dim]
-
+    
+    # 利用tf.placeholder定义inputs，是真实数据的向量。
     self.inputs = tf.placeholder(
       tf.float32, [self.batch_size] + image_dims, name='real_images')
-
     inputs = self.inputs
-
+    
+    # 定义并初始化生成器用到的噪音z，z_sum。
     self.z = tf.placeholder(
       tf.float32, [None, self.z_dim], name='z')
     self.z_sum = histogram_summary("z", self.z)
-
+    
+    # 用噪音z和标签y初始化生成器G、用输入inputs初始化判别器D和D_logits、样本、用G和y初始化D_和D_logits；
     self.G                  = self.generator(self.z, self.y)
     self.D, self.D_logits   = self.discriminator(inputs, self.y, reuse=False)
     self.sampler            = self.sampler(self.z, self.y)
