@@ -10,6 +10,7 @@ from six.moves import xrange
 from ops import *
 from utils import *
 
+# 定义conv_out_size_same(size, stride)函数。大小和步幅。
 def conv_out_size_same(size, stride):
   return int(math.ceil(float(size) / float(stride)))
 
