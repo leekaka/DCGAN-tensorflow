@@ -164,11 +164,12 @@ class DCGAN(object):
 
     # 定义训练的所有变量t_vars
     t_vars = tf.trainable_variables()
-
+    
+    # 定义生成和判别的参数集
     self.d_vars = [var for var in t_vars if 'd_' in var.name]
     self.g_vars = [var for var in t_vars if 'g_' in var.name]
 
-    # 定义生成和判别的参数集
+    # 保存
     self.saver = tf.train.Saver()
 
     # 定义训练函数train(self, config)
