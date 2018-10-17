@@ -134,16 +134,19 @@ class DCGAN(object):
     self.sampler            = self.sampler(self.z, self.y)
     self.D_, self.D_logits_ = self.discriminator(self.G, self.y, reuse=True)
     
+    # D、D_、G分别放在d_sum、d__sum、G_sum里
     self.d_sum = histogram_summary("d", self.D)
     self.d__sum = histogram_summary("d_", self.D_)
     self.G_sum = image_summary("G", self.G)
 
+    # 定义sigmoid交叉熵损失函数sigmoid_cross_entropy_with_logits(x, y)
     def sigmoid_cross_entropy_with_logits(x, y):
       try:
         return tf.nn.sigmoid_cross_entropy_with_logits(logits=x, labels=y)
       except:
         return tf.nn.sigmoid_cross_entropy_with_logits(logits=x, targets=y)
 
+    # 定义损失值。真实数据的判别损失值d_loss_real、虚假数据的判别损失值d_loss_fake、生成器损失值g_loss、判别器损失值d_loss
     self.d_loss_real = tf.reduce_mean(
       sigmoid_cross_entropy_with_logits(self.D_logits, tf.ones_like(self.D)))
     self.d_loss_fake = tf.reduce_mean(
@@ -159,31 +162,41 @@ class DCGAN(object):
     self.g_loss_sum = scalar_summary("g_loss", self.g_loss)
     self.d_loss_sum = scalar_summary("d_loss", self.d_loss)
 
+    # 定义训练的所有变量t_vars
     t_vars = tf.trainable_variables()
 
     self.d_vars = [var for var in t_vars if 'd_' in var.name]
     self.g_vars = [var for var in t_vars if 'g_' in var.name]
 
+    # 定义生成和判别的参数集
     self.saver = tf.train.Saver()
 
+    # 定义训练函数train(self, config)
   def train(self, config):
+    
+    # 定义判别器优化器d_optim和生成器优化器g_optim
     d_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1) \
               .minimize(self.d_loss, var_list=self.d_vars)
     g_optim = tf.train.AdamOptimizer(config.learning_rate, beta1=config.beta1) \
               .minimize(self.g_loss, var_list=self.g_vars)
+    
+    #  变量初始化
     try:
       tf.global_variables_initializer().run()
     except:
       tf.initialize_all_variables().run()
 
+      # 分别将关于生成器和判别器有关的变量各合并到一个变量中，并写入事件文件中
     self.g_sum = merge_summary([self.z_sum, self.d__sum,
       self.G_sum, self.d_loss_fake_sum, self.g_loss_sum])
     self.d_sum = merge_summary(
         [self.z_sum, self.d_sum, self.d_loss_real_sum, self.d_loss_sum])
     self.writer = SummaryWriter("./logs", self.sess.graph)
 
+    # 噪音z初始化
     sample_z = np.random.uniform(-1, 1, size=(self.sample_num , self.z_dim))
     
+    # 根据数据集是否为mnist的判断，进行输入数据和标签的获取。使用到了utils.py文件中的get_image函数
     if config.dataset == 'mnist':
       sample_inputs = self.data_X[0:self.sample_num]
       sample_labels = self.data_y[0:self.sample_num]
@@ -202,15 +215,19 @@ class DCGAN(object):
       else:
         sample_inputs = np.array(sample).astype(np.float32)
   
+    # 定义计数器counter和起始时间start_time
     counter = 1
     start_time = time.time()
+    
+    # 加载检查点，并判断加载是否成功
     could_load, checkpoint_counter = self.load(self.checkpoint_dir)
     if could_load:
       counter = checkpoint_counter
       print(" [*] Load SUCCESS")
     else:
       print(" [!] Load failed...")
-
+      
+    # 开始for epoch in xrange(config.epoch)循环训练。先判断数据集是否是mnist，获取批处理的大小
     for epoch in xrange(config.epoch):
       if config.dataset == 'mnist':
         batch_idxs = min(len(self.data_X), config.train_size) // config.batch_size
@@ -220,6 +237,7 @@ class DCGAN(object):
         np.random.shuffle(self.data)
         batch_idxs = min(len(self.data), config.train_size) // config.batch_size
 
+        # 开始for idx in xrange(0, batch_idxs)循环训练，判断数据集是否是mnist，来定义初始化批处理图像和标签
       for idx in xrange(0, int(batch_idxs)):
         if config.dataset == 'mnist':
           batch_images = self.data_X[idx*config.batch_size:(idx+1)*config.batch_size]
@@ -239,9 +257,13 @@ class DCGAN(object):
           else:
             batch_images = np.array(batch).astype(np.float32)
 
+            # 定义初始化噪音z
         batch_z = np.random.uniform(-1, 1, [config.batch_size, self.z_dim]) \
               .astype(np.float32)
 
+        # 判断数据集是否是mnist，来更新判别器网络和生成器网络，不管是mnist数据集还是其他数据集，
+        # 都是运行生成器优化器两次，以确保判别器损失值不会变为0，（这里和原文不一样），不同的数据集输入的内容不一样。
+        # 然后是判别器真实数据损失值和虚假数据损失值、生成器损失值。
         if config.dataset == 'mnist':
           # Update D network
           _, summary_str = self.sess.run([d_optim, self.d_sum],
@@ -277,6 +299,7 @@ class DCGAN(object):
               self.z: batch_z,
               self.y: batch_labels
           })
+          
         else:
           # Update D network
           _, summary_str = self.sess.run([d_optim, self.d_sum],
@@ -297,11 +320,14 @@ class DCGAN(object):
           errD_real = self.d_loss_real.eval({ self.inputs: batch_images })
           errG = self.g_loss.eval({self.z: batch_z})
 
+          # 输出本次批处理中训练参数的情况，首先是第几个epoch，第几个batch，训练时间，判别器损失值，生成器损失值
         counter += 1
         print("Epoch: [%2d/%2d] [%4d/%4d] time: %4.4f, d_loss: %.8f, g_loss: %.8f" \
           % (epoch, config.epoch, idx, batch_idxs,
             time.time() - start_time, errD_fake+errD_real, errG))
 
+        # 每100次batch训练后，根据数据集是否是mnist的不同，获取样本、判别器损失值、生成器损失值，调用utils.py文件的save_images函数，
+        # 保存训练后的样本，并以epoch、batch的次数命名文件。然后打印判别器损失值和生成器损失值
         if np.mod(counter, 100) == 1:
           if config.dataset == 'mnist':
             samples, d_loss, g_loss = self.sess.run(
@@ -330,14 +356,19 @@ class DCGAN(object):
             except:
               print("one pic error!...")
 
+              # 每500次batch训练后，保存一次检查点
         if np.mod(counter, 500) == 2:
           self.save(config.checkpoint_dir, counter)
 
+     # 定义判别器函数discriminator(self, image, y=None, reuse=False)
   def discriminator(self, image, y=None, reuse=False):
+    
+     # 利用with tf.variable_scope(“discriminator”) as scope，在一个作用域 scope 内共享一些变量
     with tf.variable_scope("discriminator") as scope:
       if reuse:
-        scope.reuse_variables()
+        scope.reuse_variables()  # 对scope利用reuse_variables()进行重利用
 
+        # 如果y输入 为假，则直接设置5层，前4层为使用lrelu激活函数的卷积层，最后一层是使用线性层，最后返回h4和sigmoid处理后的h4
       if not self.y_dim:
         h0 = lrelu(conv2d(image, self.df_dim, name='d_h0_conv'))
         h1 = lrelu(self.d_bn1(conv2d(h0, self.df_dim*2, name='d_h1_conv')))
@@ -346,6 +377,9 @@ class DCGAN(object):
         h4 = linear(tf.reshape(h3, [self.batch_size, -1]), 1, 'd_h4_lin')
 
         return tf.nn.sigmoid(h4), h4
+      
+      # 如果y输入 为真，则首先将Y_dim变为yb，然后利用ops.py文件中的conv_cond_concat函数，连接image与yb得到x，
+      # 然后设置4层网络，前3层是使用lrelu激励函数的卷积层，最后一层是线性层，最后返回h3和sigmoid处理后的h3
       else:
         yb = tf.reshape(y, [self.batch_size, 1, 1, self.y_dim])
         x = conv_cond_concat(image, yb)
@@ -364,8 +398,16 @@ class DCGAN(object):
         
         return tf.nn.sigmoid(h3), h3
 
+      # 定义生成器函数generator(self, z, y=None)
   def generator(self, z, y=None):
     with tf.variable_scope("generator") as scope:
+      
+      # 根据y_dim是否为真，进行判别网络的设置
+      '''
+      如果为假：首先获取输出的宽和高，然后根据这一值得到更多不同大小的高和宽的对。
+      然后获取h0层的噪音z，权值w，偏置值b，然后利用relu激励函数。h1层，首先对h0层解卷积得到本层的权值和偏置值，
+      然后利用relu激励函数。h2、h3等同于h1。h4层，解卷积h3，然后直接返回使用tanh激励函数后的h4。
+      '''
       if not self.y_dim:
         s_h, s_w = self.output_height, self.output_width
         s_h2, s_w2 = conv_out_size_same(s_h, 2), conv_out_size_same(s_w, 2)
@@ -397,6 +439,11 @@ class DCGAN(object):
             h3, [self.batch_size, s_h, s_w, self.c_dim], name='g_h4', with_w=True)
 
         return tf.nn.tanh(h4)
+      
+      '''
+      如果为真：首先也是获取输出的高和宽，根据这一值得到更多不同大小的高和宽的对。然后获取yb和噪音z。h0层，使用relu激励函数，并与1连接。
+      h1层，对线性全连接后使用relu激励函数，并与yb连接。h2层，对解卷积后使用relu激励函数，并与yb连接。最后返回解卷积、sigmoid处理后的h2。
+      '''
       else:
         s_h, s_w = self.output_height, self.output_width
         s_h2, s_h4 = int(s_h/2), int(s_h/4)
@@ -423,6 +470,7 @@ class DCGAN(object):
         return tf.nn.sigmoid(
             deconv2d(h2, [self.batch_size, s_h, s_w, self.c_dim], name='g_h3'))
 
+      # 定义sampler(self, z, y=None)函数,和生成器类似，直接返回生成结果
   def sampler(self, z, y=None):
     with tf.variable_scope("generator") as scope:
       scope.reuse_variables()
@@ -517,7 +565,9 @@ class DCGAN(object):
     return "{}_{}_{}_{}".format(
         self.dataset_name, self.batch_size,
         self.output_height, self.output_width)
-      
+     
+    # 定义save(self, checkpoint_dir, step)函数。保存训练好的模型。创建检查点文件夹，
+    # 路径不存在，则创建；然后将其保存在这个文件夹下
   def save(self, checkpoint_dir, step):
     model_name = "DCGAN.model"
     checkpoint_dir = os.path.join(checkpoint_dir, self.model_dir)
@@ -529,6 +579,10 @@ class DCGAN(object):
             os.path.join(checkpoint_dir, model_name),
             global_step=step)
 
+    '''
+    定义load(self, checkpoint_dir)函数。读取检查点，获取路径，重新存储检查点，并且计数。
+    打印成功读取的提示；如果没有路径，则打印失败的提示
+    '''
   def load(self, checkpoint_dir):
     import re
     print(" [*] Reading checkpoints...")
